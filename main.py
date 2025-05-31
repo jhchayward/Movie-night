@@ -17,7 +17,7 @@ def save_data(df):
 
 df = load_data()
 
-        st.title("🎬 80s Movie Night App")
+st.title("🎬 80s Movie Night App")
 
         # Add navigation
         page = st.radio("Choose a page:", ["🎲 Pick a Movie", "📤 Upload Movie List"])
