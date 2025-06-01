@@ -1,3 +1,4 @@
 streamlit
 pandas
-IMDbPY==2023.5.1
+beautifulsoup4
+requests
