@@ -9,8 +9,7 @@ def load_movies():
     return pd.read_csv("80s_movies.csv")
 
 # TMDb API key (replace with your actual key or set as environment variable)
-TMDB_API_KEY = st.secrets["TMDB_API_KEY"] if "TMDB_API_KEY" in st.secrets else os.getenv("TMDB_API_KEY")
-
+TMDB_API_KEY = st.secrets["TMDB_API_KEY"]
 # Fetch movie poster and overview from TMDb
 def fetch_movie_info(title):
     search_url = "https://api.themoviedb.org/3/search/movie"
