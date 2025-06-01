@@ -1,75 +1,84 @@
 import streamlit as st
 import pandas as pd
 import requests
-import random
+import os
 
-TMDB_API_KEY = "8b4a9f9a5f94db0f10d911379650cc6f"
+# Load movie data from CSV in repo
+@st.cache_data
+def load_movies():
+    return pd.read_csv("80s_movies.csv")
 
-def fetch_tmdb_info(title):
+# TMDb API key (replace with your actual key or set as environment variable)
+TMDB_API_KEY = st.secrets["TMDB_API_KEY"] if "TMDB_API_KEY" in st.secrets else os.getenv("TMDB_API_KEY")
+
+# Fetch movie poster and overview from TMDb
+def fetch_movie_info(title):
     search_url = "https://api.themoviedb.org/3/search/movie"
-    details_url = "https://api.themoviedb.org/3/movie/{}"
-    image_base_url = "https://image.tmdb.org/t/p/w500"
-
     params = {
         "api_key": TMDB_API_KEY,
-        "query": title
+        "query": title,
+        "include_adult": "false"
     }
+    response = requests.get(search_url, params=params)
+    data = response.json()
 
-    search_resp = requests.get(search_url, params=params).json()
-    results = search_resp.get("results")
-    if not results:
-        return {"poster_url": "", "overview": "No description available."}
+    if data.get("results"):
+        result = data["results"][0]
+        poster_path = result.get("poster_path")
+        overview = result.get("overview", "No description available.")
+        image_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
+        return {"image_url": image_url, "overview": overview}
 
-    movie_id = results[0]["id"]
-    details_resp = requests.get(details_url.format(movie_id), params={"api_key": TMDB_API_KEY}).json()
+    return {"image_url": None, "overview": "No information found."}
 
-    poster_path = details_resp.get("poster_path", "")
-    overview = details_resp.get("overview", "No description available.")
-    full_poster_url = f"{image_base_url}{poster_path}" if poster_path else ""
-
-    return {"poster_url": full_poster_url, "overview": overview}
-
-# Load data
-df = pd.read_csv("80s_movies.csv")
-
-st.set_page_config(page_title="80s Movie Picker")
+# Main app
+st.set_page_config(page_title="🎬 80s Movie Night", layout="centered")
 st.title("🎬 80s Movie Night Picker")
 
-# Genre Filter
-all_genres = sorted(set(
-    genre.strip()
-    for sublist in df["Genres"].dropna().str.split(";")
-    for genre in sublist
-))
-selected_genre = st.selectbox("Choose a genre (optional):", [""] + all_genres)
+df = load_movies()
 
-# Filtered DataFrame
-if selected_genre:
-    filtered_df = df[df["Genres"].str.contains(selected_genre, na=False)]
-else:
+page = st.radio("Choose a page:", ["🎲 Pick a Movie", "📤 Upload Movie List"])
+
+if page == "📤 Upload Movie List":
+    uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.success("File uploaded successfully!")
+
+elif page == "🎲 Pick a Movie":
+    all_genres = sorted(set(
+        genre.strip()
+        for sublist in df["Genre"].dropna().str.split(";")
+        for genre in sublist
+    ))
+    selected_genre = st.selectbox("Choose a genre (optional):", [""] + all_genres)
+
     filtered_df = df[df["Viewed"].str.lower() != "yes"]
+    if selected_genre:
+        filtered_df = filtered_df[filtered_df["Genre"].str.contains(selected_genre, case=False, na=False)]
 
-# Pick a movie
-if st.button("🎲 Pick a Random Movie"):
-    if not filtered_df.empty:
-        movie = filtered_df.sample(1).iloc[0]
-        st.session_state["picked_movie"] = movie.to_dict()
-    else:
-        st.warning("No movies available with that filter.")
+    if st.button("🎲 Pick a Random Movie"):
+        if not filtered_df.empty:
+            movie = filtered_df.sample(1).iloc[0]
+            st.session_state["picked_movie"] = movie.to_dict()
+        else:
+            st.warning("No movies match the selected filters.")
 
-# Show the movie
-if "picked_movie" in st.session_state:
-    movie = st.session_state["picked_movie"]
-    st.markdown(f"### 🎥 {movie['Title']}")
-    st.markdown(f"**Genre:** {movie['Genres']}")
+    if "picked_movie" in st.session_state:
+        movie = st.session_state["picked_movie"]
+        st.markdown(f"### 🎥 {movie['Title']}")
+        st.markdown(f"**Genre:** {movie['Genre']}")
 
-    tmdb_info = fetch_tmdb_info(movie["Title"])
-    if tmdb_info["poster_url"]:
-        st.image(tmdb_info["poster_url"], use_container_width=True)
-    st.markdown(tmdb_info["overview"])
+        tmdb_info = fetch_movie_info(movie["Title"])
+        if tmdb_info["image_url"]:
+            st.image(tmdb_info["image_url"], use_container_width=True)
+        else:
+            st.info("No image found.")
 
-    if st.button("✅ Mark as Viewed"):
-        df.loc[df["Title"] == movie["Title"], "Viewed"] = "Yes"
-        df.to_csv("80s_movies.csv", index=False)
-        del st.session_state["picked_movie"]
-        st.success("Marked as viewed!")
+        st.markdown(tmdb_info["overview"])
+
+        if st.button("✅ Mark as Viewed"):
+            df.loc[df["Title"] == movie["Title"], "Viewed"] = "Yes"
+            df.to_csv("80s_movies.csv", index=False)
+            st.success(f"Marked '{movie['Title']}' as viewed.")
+            del st.session_state["picked_movie"]
