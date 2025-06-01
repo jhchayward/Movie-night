@@ -19,7 +19,7 @@ st.title("🎬 80s Movie Night App")
 # Page layout: just one main function now
 all_genres = sorted(set(
     genre.strip()
-    for sublist in df["Genre"].dropna().str.split(",")
+    for sublist in df["Genre"].dropna().str.split(";")
     for genre in sublist
 ))
 selected_genre = st.selectbox("Choose a genre (optional):", [""] + all_genres)
