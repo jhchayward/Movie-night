@@ -1,52 +1,21 @@
-import streamlit as st
-import pandas as pd
-import random
+from imdb import IMDb
 
-CSV_FILE = "80s_movies.csv"
+ia = IMDb()
 
-# Load the movie list from CSV in the repo
-@st.cache_data
-def load_data():
-    return pd.read_csv(CSV_FILE)
+def fetch_imdb_data(title):
+    search_results = ia.search_movie(title)
+    if search_results:
+        movie = ia.get_movie(search_results[0].movieID)
+        return {
+            "title": movie.get("title"),
+            "year": movie.get("year"),
+            "plot": movie.get("plot outline", "No description available."),
+            "cover_url": movie.get("cover url", "")
+        }
+    return None
 
-def save_data(df):
-    df.to_csv(CSV_FILE, index=False)
-
-df = load_data()
-
-st.title("🎬 80s Movie Night App")
-
-# Page layout: just one main function now
-all_genres = sorted(set(
-    genre.strip()
-    for sublist in df["Genre"].dropna().str.split(";")
-    for genre in sublist
-))
-selected_genre = st.selectbox("Choose a genre (optional):", [""] + all_genres)
-
-# Filter by genre and unwatched
-if selected_genre:
-    filtered_df = df[(df["Viewed"] != "Yes") & (df["Genre"].str.contains(selected_genre, case=False, na=False))]
-else:
-    filtered_df = df[df["Viewed"] != "Yes"]
-
-if st.button("🎲 Pick a Random Movie"):
-    if not filtered_df.empty:
-        movie = filtered_df.sample(1).iloc[0]
-        st.session_state["picked_movie"] = movie.to_dict()
-    else:
-        st.warning("No unwatched movies match that genre.")
-
-# Display result
-if "picked_movie" in st.session_state:
-    movie = st.session_state["picked_movie"]
-    st.markdown(f"### 🎥 {movie['Title']}")
-    st.markdown(f"**Genre:** {movie['Genre']}")
-    
-    if st.button("✅ Mark as Viewed"):
-        idx = df[df["Title"] == movie["Title"]].index
-        if not df.loc[idx, "Viewed"].eq("Yes").all():
-            df.loc[idx, "Viewed"] = "Yes"
-            save_data(df)
-            st.success(f"Marked **{movie['Title']}** as viewed.")
-            del st.session_state["picked_movie"]
+# Inside the picked movie display logic
+imdb_data = fetch_imdb_data(movie["Title"])
+if imdb_data:
+    st.image(imdb_data["cover_url"], width=300)
+    st.markdown(f"**IMDb Summary:** {imdb_data['plot']}")
