@@ -1,28 +1,34 @@
 import streamlit as st
 import pandas as pd
 import requests
-import random
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-CSV_FILE = "80s_movies.csv"
+# TMDb API
+TMDB_API_KEY = st.secrets["tmdb_api_key"]
+
+# Google Sheets setup
+SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+CREDENTIALS = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], SCOPE)
+gc = gspread.authorize(CREDENTIALS)
+
+SHEET_NAME = "80s_movies"
+worksheet = gc.open(SHEET_NAME).sheet1
 
 # Load movie data
-@st.cache_data
+@st.cache_data(ttl=60)
 def load_data():
-    return pd.read_csv(CSV_FILE)
+    data = worksheet.get_all_records()
+    return pd.DataFrame(data)
 
-df = load_data()
+def save_data(df):
+    worksheet.clear()
+    worksheet.update([df.columns.values.tolist()] + df.values.tolist())
 
-st.title("🎬 80s Movie Night")
-
-# Navigation
-page = st.radio("Choose a page:", ["🎲 Pick a Movie", "📤 Upload Movie List"])
-
-# TMDb info fetcher
+# TMDb movie lookup
 def fetch_movie_info(title):
-    api_key = st.secrets["TMDB_API_KEY"]
-    url = f"https://api.themoviedb.org/3/search/movie?query={title}&api_key={api_key}"
+    url = f"https://api.themoviedb.org/3/search/movie?query={title}&api_key={TMDB_API_KEY}"
     response = requests.get(url)
-
     if response.status_code == 200:
         data = response.json()
         if data.get("results"):
@@ -31,17 +37,16 @@ def fetch_movie_info(title):
             overview = result.get("overview", "No description available.")
             image_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
             return {"image_url": image_url, "overview": overview}
-
     return {"image_url": None, "overview": "No information found."}
 
-# --------- Page 1: Pick a Movie ---------
-if page == "🎲 Pick a Movie":
-    all_genres = sorted(set(
-        genre.strip()
-        for sublist in df["Genre"].dropna().str.split(";")
-        for genre in sublist
-    ))
+# UI
+st.title("🎬 80s Movie Night App")
+page = st.radio("Choose a page:", ["🎲 Pick a Movie", "🧪 Test Google Sheet Connection"])
 
+df = load_data()
+
+if page == "🎲 Pick a Movie":
+    all_genres = sorted(set(genre.strip() for sublist in df["Genre"].dropna().str.split(";") for genre in sublist))
     selected_genre = st.selectbox("Choose a genre (optional):", [""] + all_genres)
 
     if selected_genre:
@@ -61,27 +66,22 @@ if page == "🎲 Pick a Movie":
         st.markdown(f"### 🎥 {movie['Title']}")
         st.markdown(f"**Genre:** {movie['Genre']}")
 
-        tmdb_info = fetch_movie_info(movie["Title"])
-        if tmdb_info["image_url"]:
-            st.image(tmdb_info["image_url"], use_container_width=True)
-        st.markdown(tmdb_info["overview"])
+        tmdb_data = fetch_movie_info(movie["Title"])
+        if tmdb_data["image_url"]:
+            st.image(tmdb_data["image_url"], use_container_width=True)
+        st.markdown(tmdb_data["overview"])
 
         if st.button("✅ Mark as Viewed"):
-            idx = df[df["Title"] == movie["Title"]].index
+            idx = df[df["Title"].str.strip().str.lower() == movie["Title"].strip().lower()].index
             if not df.loc[idx, "Viewed"].eq("Yes").all():
                 df.loc[idx, "Viewed"] = "Yes"
-                df.to_csv(CSV_FILE, index=False)
+                save_data(df)
                 st.success(f"Marked **{movie['Title']}** as viewed.")
                 del st.session_state["picked_movie"]
 
-# --------- Page 2: Upload CSV ---------
-elif page == "📤 Upload Movie List":
-    st.markdown("Upload a CSV with columns: Title, Genre, Viewed")
-    uploaded = st.file_uploader("Choose CSV file", type="csv")
-    if uploaded:
-        new_df = pd.read_csv(uploaded)
-        if set(["Title", "Genre", "Viewed"]).issubset(new_df.columns):
-            new_df.to_csv(CSV_FILE, index=False)
-            st.success("Uploaded new movie list! Refresh the page to load it.")
-        else:
-            st.error("CSV must contain columns: Title, Genre, Viewed")
+elif page == "🧪 Test Google Sheet Connection":
+    try:
+        test_data = worksheet.get_all_records()
+        st.success(f"Successfully connected to Google Sheet. {len(test_data)} rows loaded.")
+    except Exception as e:
+        st.error(f"Error connecting to Google Sheet: {e}")
