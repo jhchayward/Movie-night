@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 
 CSV_FILE = "80s_movies.csv"
 
-# Load movie list
+# Load or create movie list
 @st.cache_data
 def load_data():
     try:
@@ -17,37 +17,35 @@ def load_data():
 def save_data(df):
     df.to_csv(CSV_FILE, index=False)
 
-# IMDb scraping
 def fetch_imdb_data(title):
-    query = '+'.join(title.split())
-    search_url = f"https://www.imdb.com/find?q={query}&s=tt&ttype=ft"
-    search_response = requests.get(search_url)
-    search_soup = BeautifulSoup(search_response.text, "html.parser")
-    
-    result = search_soup.find("td", class_="result_text")
-    if result and result.a:
-        link = "https://www.imdb.com" + result.a["href"]
-        movie_response = requests.get(link)
-        movie_soup = BeautifulSoup(movie_response.text, "html.parser")
-        
-        # Plot
+    try:
+        search_url = f"https://www.imdb.com/find?q={requests.utils.quote(title)}&s=tt&ttype=ft&ref_=fn_ft"
+        search_res = requests.get(search_url, headers={"Accept-Language": "en-US,en;q=0.5"})
+        search_soup = BeautifulSoup(search_res.content, "html.parser")
+
+        first_result = search_soup.select_one(".findList .findResult a")
+        if not first_result or not first_result['href']:
+            return {"cover_url": None, "plot": "No IMDb match found."}
+
+        movie_url = "https://www.imdb.com" + first_result["href"]
+        movie_res = requests.get(movie_url, headers={"Accept-Language": "en-US,en;q=0.5"})
+        movie_soup = BeautifulSoup(movie_res.content, "html.parser")
+
+        image_tag = movie_soup.find("img", {"class": "ipc-image"})
+        image_url = image_tag["src"] if image_tag and "src" in image_tag.attrs else None
+
         plot_tag = movie_soup.find("span", {"data-testid": "plot-xl"})
         plot = plot_tag.text.strip() if plot_tag else "No plot summary available."
 
-        # Poster
-        poster_tag = movie_soup.find("img", {"class": "ipc-image"})
-        cover_url = poster_tag["src"] if poster_tag else ""
-        
-        return {"plot": plot, "cover_url": cover_url}
-    return {"plot": "No data found.", "cover_url": ""}
+        return {"cover_url": image_url, "plot": plot}
 
-# Load data
+    except Exception as e:
+        return {"cover_url": None, "plot": f"Error fetching data: {e}"}
+
 df = load_data()
 
-# App title
 st.title("🎬 80s Movie Night App")
 
-# Navigation
 page = st.radio("Choose a page:", ["🎲 Pick a Movie", "📤 Upload Movie List"])
 
 # --------- Page 1: Pick a Movie ---------
