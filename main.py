@@ -17,35 +17,40 @@ def load_data():
 def save_data(df):
     df.to_csv(CSV_FILE, index=False)
 
+# IMDb scraping
 def fetch_imdb_data(title):
     try:
-        search_url = f"https://www.imdb.com/find?q={requests.utils.quote(title)}&s=tt&ttype=ft&ref_=fn_ft"
+        search_url = f"https://www.imdb.com/find?q={requests.utils.quote(title)}&s=tt&ttype=ft"
         search_res = requests.get(search_url, headers={"Accept-Language": "en-US,en;q=0.5"})
-        search_soup = BeautifulSoup(search_res.content, "html.parser")
+        search_soup = BeautifulSoup(search_res.text, "html.parser")
 
-        first_result = search_soup.select_one(".findList .findResult a")
-        if not first_result or not first_result['href']:
+        first_link = search_soup.select_one(".findList .result_text a")
+        if not first_link:
             return {"cover_url": None, "plot": "No IMDb match found."}
 
-        movie_url = "https://www.imdb.com" + first_result["href"]
-        movie_res = requests.get(movie_url, headers={"Accept-Language": "en-US,en;q=0.5"})
-        movie_soup = BeautifulSoup(movie_res.content, "html.parser")
+        movie_page = "https://www.imdb.com" + first_link["href"]
+        movie_res = requests.get(movie_page, headers={"Accept-Language": "en-US,en;q=0.5"})
+        movie_soup = BeautifulSoup(movie_res.text, "html.parser")
 
-        image_tag = movie_soup.find("img", {"class": "ipc-image"})
-        image_url = image_tag["src"] if image_tag and "src" in image_tag.attrs else None
+        poster_img = movie_soup.select_one(".ipc-image") or movie_soup.find("img")
+        cover_url = poster_img["src"] if poster_img and "src" in poster_img.attrs else None
 
-        plot_tag = movie_soup.find("span", {"data-testid": "plot-xl"})
-        plot = plot_tag.text.strip() if plot_tag else "No plot summary available."
+        plot_tag = movie_soup.find("span", {"data-testid": "plot-xl"}) or \
+                   movie_soup.find("div", class_="summary_text") or \
+                   movie_soup.select_one(".sc-16ede01-2.gkTtce")
 
-        return {"cover_url": image_url, "plot": plot}
+        plot = plot_tag.get_text(strip=True) if plot_tag else "No plot summary available."
+
+        return {"cover_url": cover_url, "plot": plot}
 
     except Exception as e:
-        return {"cover_url": None, "plot": f"Error fetching data: {e}"}
+        return {"cover_url": None, "plot": f"IMDb fetch error: {e}"}
 
 df = load_data()
 
 st.title("🎬 80s Movie Night App")
 
+# Navigation
 page = st.radio("Choose a page:", ["🎲 Pick a Movie", "📤 Upload Movie List"])
 
 # --------- Page 1: Pick a Movie ---------
